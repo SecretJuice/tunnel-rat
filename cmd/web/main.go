@@ -2,6 +2,8 @@ package main
 
 import (
 	"conrobb/tunnel-rat/internal/model"
+	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -17,15 +19,32 @@ func httpError(w http.ResponseWriter, code int) {
 }
 
 func handleCreateTunnel(w http.ResponseWriter, r *http.Request) {
-	err := r.ParseForm()
+
+	type createTunnelReq struct {
+		Secret    string `json:"client_secret"`
+		PublicKey string `json:"public_key"`
+	}
+
+	if r.Method != http.MethodPost {
+		httpError(w, http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		logger.Error("Could not parse form", "error", err.Error())
 		httpError(w, http.StatusBadRequest)
 		return
 	}
-	secret := r.FormValue("client_secret")
-	logger.Debug("SECRET: " + secret)
-	if !model.ValidateSecret(secret) {
+	defer r.Body.Close()
+
+	var data createTunnelReq
+	if err := json.Unmarshal(body, &data); err != nil {
+		httpError(w, http.StatusBadRequest)
+		return
+	}
+
+	logger.Debug("SECRET: " + data.Secret)
+	if !model.ValidateSecret(data.Secret) {
 		httpError(w, http.StatusUnauthorized)
 		return
 	}

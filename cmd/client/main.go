@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	apiURL        = "https://your-api.example.com/get-config"
+	apiURL        = "http://host.docker.internal:8080/tunnel"
 	configPath    = "/etc/wireguard/wg0.conf"
 	clientEnv     = "CLIENT_SECRET"
 	checkInterval = 30 * time.Second
@@ -68,6 +68,9 @@ func main() {
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Fatalf("[ERROR] No response from API: %v", err)
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		log.Fatalf("[ERROR] Invalid 'CLIENT_SECRET' provided")
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
