@@ -11,8 +11,7 @@ services:
       - net.ipv4.conf.all.src_valid_mark=1
       - net.ipv4.ip_forward=1
     environment:
-      - CLIENT_SECRET=tp8M3S0-6Dx7_hdB9OgjcZI3yv9YXCmds8GxuvHcKyn-QAuv
-    restart: unless-stopped
+      - CLIENT_SECRET=7xXHk1_DyDsyd3gp2SyrRd62_KDf5vFOLMf6OnywVpn3G_NB
 
   hello-world:
     image: containous/whoami  # A small HTTP server that prints request details
