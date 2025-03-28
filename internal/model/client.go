@@ -44,12 +44,12 @@ func ValidateSecret(secret string) bool {
 	return false
 }
 
-func CreateClient(client Client) (string, error) {
+func CreateClient(client Client) (Client, error) {
 	if client.Secret == "" {
-		client.Secret = generateSecret(48)
+		client.Secret = generateSecret(60)
 	}
 
 	clientStore[client.Secret] = client
 
-	return client.Secret, nil
+	return client, nil
 }
