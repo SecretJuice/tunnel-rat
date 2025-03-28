@@ -46,7 +46,7 @@ func (app *application) logMw(next http.Handler) http.Handler {
 
 func (app *application) requireAuthentication(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		userInfo, ok := app.sessions.Get(r.Context(), "user-info").(UserInfo)
+		userInfo, ok := app.getUserInfo(r)
 		if !ok {
 			// TODO create real auth redirect. For now, just bounce the connection
 			app.logger.Debug("BOUNCING UNAUTHORIZED: userInfo NOT PRESENT")
@@ -63,4 +63,12 @@ func (app *application) requireAuthentication(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (app *application) getUserInfo(r *http.Request) (UserInfo, bool) {
+	userInfo, ok := app.sessions.Get(r.Context(), "user-info").(UserInfo)
+	if !ok {
+		return UserInfo{}, false
+	}
+	return userInfo, true
 }

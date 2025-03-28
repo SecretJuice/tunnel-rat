@@ -11,6 +11,10 @@ const (
 	TERMINATED  TunnelStatus = "terminated"
 )
 
+type TunnelModel struct {
+	*ModelContext
+}
+
 type Tunnel struct {
 	ID              string       `json:"tunnel_id"`
 	Status          TunnelStatus `json:"status"`

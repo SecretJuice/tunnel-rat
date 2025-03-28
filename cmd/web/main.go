@@ -20,6 +20,7 @@ type application struct {
 	logger   *slog.Logger
 	db       *sql.DB
 	sessions *scs.SessionManager
+	models   *model.ModelContext
 }
 
 func httpError(w http.ResponseWriter, code int) {
@@ -71,16 +72,34 @@ func (app *application) handleCreateTunnel(w http.ResponseWriter, r *http.Reques
 }
 
 func (app *application) handleCreateClient(w http.ResponseWriter, r *http.Request) {
-	newClient := model.Client{}
 
-	newClient, err := model.CreateClient(newClient)
+	err := r.ParseForm()
+	if err != nil {
+		httpError(w, http.StatusBadRequest)
+		return
+	}
+
+	userInfo, ok := app.getUserInfo(r)
+	if !ok {
+		httpError(w, http.StatusUnauthorized)
+		return
+	}
+
+	newClient, err := app.models.Clients.CreateClient(
+		userInfo.Id, r.FormValue("name"), model.Region(r.FormValue("region")))
 	if err != nil {
 		app.logger.Error("Could not create client", "error", err.Error())
 		httpError(w, http.StatusInternalServerError)
 		return
 	}
 
-	w.Write([]byte(newClient.Secret))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+
+	if err := json.NewEncoder(w).Encode(newClient); err != nil {
+		app.logger.Error("Failed to encode JSON", "error", err.Error())
+		httpError(w, http.StatusInternalServerError)
+	}
 }
 
 type UserInfo struct {
@@ -106,14 +125,31 @@ func main() {
 	sessionManager.Store = postgresstore.New(db)
 	sessionManager.Lifetime = 2 * time.Hour
 
+	mc := initializeModelContext(db, logger)
+
 	app := application{
 		logger:   logger,
 		db:       db,
 		sessions: sessionManager,
+		models:   mc,
 	}
 
 	logger.Info("Starting server on :8080")
 	http.ListenAndServe(":8080", app.routes())
+}
+
+func initializeModelContext(db *sql.DB, logger *slog.Logger) *model.ModelContext {
+	mc := model.ModelContext{Db: db, Logger: logger}
+
+	clients := model.ClientModel{&mc}
+	relays := model.RelayModel{&mc}
+	tunnel := model.TunnelModel{&mc}
+
+	mc.Clients = clients
+	mc.Relays = relays
+	mc.Tunnels = tunnel
+
+	return &mc
 }
 
 func (app *application) routes() *http.ServeMux {

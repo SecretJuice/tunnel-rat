@@ -3,7 +3,16 @@ package model
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
+	"math/big"
 	"strings"
+)
+
+type Region string
+
+const (
+	NA_WEST Region = "na-w"
+	NA_EAST Region = "na-e"
 )
 
 func generateSecret(length int) string {
@@ -26,11 +35,35 @@ func generateSecret(length int) string {
 	return str
 }
 
+const letters = "abcdefghijklmnopqrstuvwxyz"
+
+func generateSubdomain(n int) (string, error) {
+	b := make([]byte, n)
+	for i := range b {
+		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
+		if err != nil {
+			return "", err
+		}
+		b[i] = letters[num.Int64()]
+	}
+	return string(b), nil
+}
+
 type Client struct {
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Subdomain  string `json:"subdomain"`
+	Region     Region `json:"region"`
 	PublicKey  string `json:"public_key"`
 	AllowedIPs string `json:"allowed_ips"`
 	DNS        string `json:"dns,omitempty"`
 	Secret     string `json:"client_secret"`
+	UserID     int64  `json:"user_id"`
+	Relay      int64  `json:"relay_id"`
+}
+
+type ClientModel struct {
+	*ModelContext
 }
 
 var clientStore map[string]Client = make(map[string]Client) //string=Client Secret
@@ -44,12 +77,37 @@ func ValidateSecret(secret string) bool {
 	return false
 }
 
-func CreateClient(client Client) (Client, error) {
-	if client.Secret == "" {
-		client.Secret = generateSecret(60)
+func (m *ClientModel) CreateClient(userId int64, name string, region Region) (Client, error) {
+	query := `
+        INSERT INTO client (name, subdomain, region, secret, "user")
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id;
+	`
+	subdomain, _ := generateSubdomain(5)
+	secret := generateSecret(60)
+
+	var clientID int64
+	err := m.Db.QueryRow(
+		query,
+		name,
+		subdomain,
+		region,
+		secret,
+		userId,
+	).Scan(&clientID)
+
+	client := Client{
+		ID:        clientID,
+		Name:      name,
+		Subdomain: subdomain,
+		Region:    region,
+		Secret:    secret,
+		UserID:    userId,
 	}
 
-	clientStore[client.Secret] = client
+	if err != nil {
+		return Client{}, fmt.Errorf("failed to create client: %w", err)
+	}
 
 	return client, nil
 }

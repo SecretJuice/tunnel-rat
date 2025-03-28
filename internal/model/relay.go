@@ -1,5 +1,9 @@
 package model
 
+type RelayModel struct {
+	*ModelContext
+}
+
 type Relay struct {
 	PublicKey  string `json:"public_key"`
 	Endpoint   string `json:"endpoint"`
