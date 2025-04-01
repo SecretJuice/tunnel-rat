@@ -1,6 +1,7 @@
 package main
 
 import (
+	"conrobb/tunnel-rat/internal/model"
 	"context"
 	"fmt"
 	"log/slog"
@@ -71,4 +72,27 @@ func (app *application) getUserInfo(r *http.Request) (UserInfo, bool) {
 		return UserInfo{}, false
 	}
 	return userInfo, true
+}
+
+func (app *application) clientRequireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		client, err := app.models.Clients.GetBySecret(r.Header.Get("Authorization"))
+		if err != nil {
+			app.logger.Error("Could not get client", "error", err.Error())
+			httpError(w, http.StatusInternalServerError)
+			return
+		}
+		if client == nil {
+			app.logger.Debug("Unauthorized client made request")
+			httpError(w, http.StatusUnauthorized)
+			return
+		}
+		req := r.WithContext(context.WithValue(r.Context(), "client", *client))
+		next.ServeHTTP(w, req)
+	})
+}
+
+func getClient(r *http.Request) (model.Client, bool) {
+	client, ok := r.Context().Value("client").(model.Client)
+	return client, ok
 }

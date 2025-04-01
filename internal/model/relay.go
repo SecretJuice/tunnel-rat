@@ -5,8 +5,10 @@ type RelayModel struct {
 }
 
 type Relay struct {
-	PublicKey  string `json:"public_key"`
-	Endpoint   string `json:"endpoint"`
-	AllowedIPs string `json:"allowed_ips"`
-	DNS        string `json:"dns,omitempty"`
+	ID        int64  `json:"id"`
+	Region    Region `json:"region"`
+	PublicKey string `json:"public_key"`
+	Address   string `json:"address"`  //192.168.4.1
+	Endpoint  string `json:"endpoint"` //external, static ip of relay machine
+	DNS       string `json:"dns,omitempty"`
 }

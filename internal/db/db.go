@@ -32,10 +32,24 @@ const createRelayTable = `
 CREATE TABLE IF NOT EXISTS "relay"(
     "id" SERIAL PRIMARY KEY NOT NULL,
     "region" VARCHAR(255) CHECK
-        ("region" IN('')) NOT NULL,
+        ("region" IN('na-w', 'na-e')) NOT NULL,
         "active" BOOLEAN NOT NULL,
         "public_key" VARCHAR(255) NOT NULL,
-        "ip_address" VARCHAR(255) NOT NULL
+        "endpoint" VARCHAR(255) NOT NULL
+);
+`
+
+const createTunnelTable = `
+CREATE TABLE IF NOT EXISTS "tunnel"(
+	"id" SERIAL PRIMARY KEY NOT NULL,
+	"status" VARCHAR(255) CHECK 
+		("status" IN ('pending', 'active', 'terminating', 'terminated')) NOT NULL,
+	"relay" BIGINT NULL REFERENCES "relay"("id"),
+	"client" BIGINT NULL REFERENCES "client"("id"),
+	"allowed_ip" VARCHAR(255),
+	"request_time" TIMESTAMPTZ NOT NULL,
+	"established_time" TIMESTAMPTZ,
+	"terminated_time" TIMESTAMPTZ
 );
 `
 
@@ -74,6 +88,11 @@ func EnsureTables(db *sql.DB, logger *slog.Logger) error {
 	_, err = db.Exec(createClientTable)
 	if err != nil {
 		logger.Error("Could not create client table", "error", err.Error())
+		return err
+	}
+	_, err = db.Exec(createTunnelTable)
+	if err != nil {
+		logger.Error("Could not create tunnel table", "error", err.Error())
 		return err
 	}
 	_, err = db.Exec(createPortMappingTable)

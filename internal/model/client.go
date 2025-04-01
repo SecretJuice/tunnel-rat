@@ -2,7 +2,9 @@ package model
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -66,15 +68,68 @@ type ClientModel struct {
 	*ModelContext
 }
 
-var clientStore map[string]Client = make(map[string]Client) //string=Client Secret
+var (
+	ErrNotFound error = errors.New("not found in database")
+)
 
-func ValidateSecret(secret string) bool {
-	for key := range clientStore {
-		if key == secret {
-			return true
-		}
+func (m *ClientModel) UpdatePublicKey(clientId int64, pubkey string) error {
+	query := `
+		UPDATE client
+		SET public_key = $1
+		WHERE id = $2
+		RETURNING public_key	
+	`
+	result, err := m.Db.Exec(
+		query,
+		pubkey,
+		clientId,
+	)
+
+	affected, err := result.RowsAffected()
+	if affected == 0 {
+		return ErrNotFound
 	}
-	return false
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *ClientModel) GetBySecret(secret string) (*Client, error) {
+	query := `
+		SELECT id, name, subdomain, region, secret, "user", relay FROM client
+		WHERE secret=$1;
+	`
+	var client Client
+
+	var relayId sql.NullInt64
+
+	err := m.Db.QueryRow(
+		query,
+		secret,
+	).Scan(
+		&client.ID,
+		&client.Name,
+		&client.Subdomain,
+		&client.Region,
+		&client.Secret,
+		&client.UserID,
+		&relayId,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	if relayId.Valid {
+		client.Relay = relayId.Int64
+	}
+	return &client, nil
+
 }
 
 func (m *ClientModel) CreateClient(userId int64, name string, region Region) (Client, error) {

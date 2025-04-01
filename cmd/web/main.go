@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/alexedwards/scs/postgresstore"
@@ -39,8 +40,12 @@ func (app *application) handleSignin(w http.ResponseWriter, r *http.Request) {
 func (app *application) handleCreateTunnel(w http.ResponseWriter, r *http.Request) {
 
 	type createTunnelReq struct {
-		Secret    string `json:"client_secret"`
 		PublicKey string `json:"public_key"`
+	}
+	client, ok := getClient(r)
+	if !ok {
+		httpError(w, http.StatusUnauthorized)
+		return
 	}
 
 	if r.Method != http.MethodPost {
@@ -61,14 +66,70 @@ func (app *application) handleCreateTunnel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	app.logger.Debug("SECRET: " + data.Secret)
-	if !model.ValidateSecret(data.Secret) {
+	err = app.models.Clients.UpdatePublicKey(client.ID, data.PublicKey)
+	if err != nil {
+		app.logger.Error("Could not update public key", "error", err.Error())
+		httpError(w, http.StatusInternalServerError)
+		return
+	}
+
+	tunnelId, err := app.models.Tunnels.CreateTunnel(client.ID, client.Relay)
+	if err != nil {
+		app.logger.Error("Could not create tunnel", "error", err.Error())
+		httpError(w, http.StatusInternalServerError)
+		return
+	}
+
+	res := map[string]int64{
+		"tunnel_id": tunnelId,
+	}
+
+	jsonBytes, err := json.Marshal(res)
+	if err != nil {
+		app.logger.Error("Could not marshal JSON", "error", err.Error())
+		httpError(w, http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(jsonBytes)
+}
+
+func (app *application) handleGetTunnel(w http.ResponseWriter, r *http.Request) {
+	client, ok := getClient(r)
+	if !ok {
 		httpError(w, http.StatusUnauthorized)
 		return
 	}
 
-	w.Write([]byte("asdfasfsadfsa"))
+	tunnelID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		httpError(w, http.StatusBadRequest)
+		return
+	}
 
+	tunnel, err := app.models.Tunnels.GetById(tunnelID)
+	if err != nil {
+		app.logger.Error("Could not get tunnel", "error", err.Error())
+		httpError(w, http.StatusInternalServerError)
+		return
+	}
+	if tunnel == nil {
+		httpError(w, http.StatusNotFound)
+		return
+	}
+
+	if tunnel.ClientID != client.ID {
+		httpError(w, http.StatusForbidden)
+		return
+	}
+
+	jsonBytes, err := json.Marshal(*tunnel)
+	if err != nil {
+		app.logger.Error("Could not marshal JSON", "error", err.Error())
+		httpError(w, http.StatusInternalServerError)
+		return
+	}
+	w.Write(jsonBytes)
 }
 
 func (app *application) handleCreateClient(w http.ResponseWriter, r *http.Request) {
@@ -99,6 +160,7 @@ func (app *application) handleCreateClient(w http.ResponseWriter, r *http.Reques
 	if err := json.NewEncoder(w).Encode(newClient); err != nil {
 		app.logger.Error("Failed to encode JSON", "error", err.Error())
 		httpError(w, http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -153,9 +215,6 @@ func initializeModelContext(db *sql.DB, logger *slog.Logger) *model.ModelContext
 }
 
 func (app *application) routes() *http.ServeMux {
-	mwStack := func(h func(http.ResponseWriter, *http.Request)) http.Handler {
-		return app.logMw(http.HandlerFunc(h))
-	}
 	anonUserMw := func(h func(http.ResponseWriter, *http.Request)) http.Handler {
 		return app.logMw(
 			app.sessions.LoadAndSave(
@@ -172,12 +231,21 @@ func (app *application) routes() *http.ServeMux {
 			),
 		)
 	}
+	protectedClientMw := func(h func(http.ResponseWriter, *http.Request)) http.Handler {
+		return app.logMw(
+			app.clientRequireAuth(
+				http.HandlerFunc(h),
+			),
+		)
+	}
 
 	mux := http.NewServeMux()
 
 	mux.Handle("GET /signin", anonUserMw(app.handleSignin))
 
-	mux.Handle("POST /tunnel", mwStack(app.handleCreateTunnel))
+	mux.Handle("POST /tunnel", protectedClientMw(app.handleCreateTunnel))
+	mux.Handle("GET /tunnel/{id}", protectedClientMw(app.handleGetTunnel))
+
 	mux.Handle("POST /client", protectedUserMw(app.handleCreateClient))
 
 	return mux
